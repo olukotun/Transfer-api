@@ -29,10 +29,12 @@ public class TransferController {
         );
     }
     @PostMapping
-    public ResponseEntity<TransferResponse> createTransfer(@Valid @RequestBody TransferRequest request) {
-        TransferResponse response = transferService.createTransfer(request);
+    public ResponseEntity<TransferResponse> createTransfer(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody TransferRequest request) {
+        System.out.println("DEBUG controller key: " + idempotencyKey);
 
-
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(transferService.createTransfer(idempotencyKey, request));
     }
 }
