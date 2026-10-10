@@ -32,9 +32,12 @@ public class TransferController {
     public ResponseEntity<TransferResponse> createTransfer(
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody TransferRequest request) {
-        System.out.println("DEBUG controller key: " + idempotencyKey);
-
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(transferService.createTransfer(idempotencyKey, request));
+    }
+
+    @GetMapping("{id}")
+    public ResponseEntity<TransferResponse> getTransferDetails(@PathVariable UUID id){
+        return ResponseEntity.status(HttpStatus.OK).body(transferService.getTransfer(id));
     }
 }

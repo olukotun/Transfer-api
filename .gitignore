@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+.idea/
+.env
+.env.*
+!.env.example
+concurrent-*.txt

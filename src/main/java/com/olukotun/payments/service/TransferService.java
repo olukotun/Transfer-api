@@ -9,6 +9,9 @@ import com.olukotun.payments.exception.TransferNotFoundException;
 import com.olukotun.payments.respository.TransferRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -17,24 +20,25 @@ import java.util.UUID;
 @Service
 public class TransferService {
     private final TransferRepository transferRepository;
+    private final TransactionTemplate transactionTemplate;
 
-    public TransferService(TransferRepository transferRepository) {
+    public TransferService(
+            TransferRepository transferRepository,
+            PlatformTransactionManager transactionManager) {
+
         this.transferRepository = transferRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
-    public TransferResponse createTransfer(String idempotencyKey, TransferRequest request) {
+
+    private TransferResponse createTransferInTransaction(String idempotencyKey, TransferRequest request) {
         System.out.println("DEBUG service key: " + idempotencyKey);
         if (idempotencyKey.isBlank() || idempotencyKey.length() > 100) {
-            throw new InvalidTransferException(
-                    "Idempotency key must contain 1 to 100 characters"
-            );
+            throw new InvalidTransferException("Idempotency key must contain 1 to 100 characters");
         }
 
         if (request.sourceAccount().equals(request.destinationAccount())) {
-            throw new InvalidTransferException(
-                    "Source and destination accounts must be different"
-            );
+            throw new InvalidTransferException("Source and destination accounts must be different");
         }
 
         Optional<Transfer> existing = transferRepository.findByIdempotencyKey(idempotencyKey);
@@ -48,7 +52,9 @@ public class TransferService {
                             && transfer.getAmount().compareTo(request.amount()) == 0
                             && transfer.getCurrency().equals(request.currency());
 
-            if (!sameDetails) {throw new IdempotencyConflictException();}
+            if (!sameDetails) {
+                throw new IdempotencyConflictException();
+            }
 
             return toResponse(transfer);
         }
@@ -72,6 +78,38 @@ public class TransferService {
                 transfer.getAmount(),
                 transfer.getCurrency()
         );
+    }
+
+    public TransferResponse createTransfer(String idempotencyKey, TransferRequest request) {
+
+        try {
+            return transactionTemplate.execute(transaction ->
+                    createTransferInTransaction(idempotencyKey, request)
+            );
+        } catch (DataIntegrityViolationException exception) {
+            if (!isIdempotencyKeyViolation(exception)) {
+                throw exception;
+            }
+
+            // The failed transaction has rolled back.
+            // In a fresh transaction, find and compare the winning transfer.
+            return transactionTemplate.execute(transaction ->
+                    createTransferInTransaction(idempotencyKey, request)
+            );
+        }
+    }
+
+    private boolean isIdempotencyKeyViolation(Throwable exception) {
+        Throwable current = exception;
+
+        while (current != null) {
+            if (current instanceof org.hibernate.exception.ConstraintViolationException violation) {
+                return "uk_transfers_idempotency_key".equals(violation.getConstraintName());
+            }
+            current = current.getCause();
+        }
+
+        return false;
     }
 
     @Transactional(readOnly = true)
