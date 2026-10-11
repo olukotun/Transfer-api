@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import com.olukotun.payments.entity.TransferOutbox;
+import com.olukotun.payments.respository.TransferOutboxRepository;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -21,13 +23,16 @@ import java.util.UUID;
 public class TransferService {
     private final TransferRepository transferRepository;
     private final TransactionTemplate transactionTemplate;
+    private final TransferOutboxRepository transferOutboxRepository;
 
     public TransferService(
             TransferRepository transferRepository,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            TransferOutboxRepository transferOutboxRepository) {
 
         this.transferRepository = transferRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.transferOutboxRepository = transferOutboxRepository;
     }
 
 
@@ -68,7 +73,11 @@ public class TransferService {
         );
         System.out.println("DEBUG entity key: " + transfer.getIdempotencyKey());
 
-        return toResponse(transferRepository.save(transfer));
+        Transfer saved = transferRepository.saveAndFlush(transfer);
+
+        transferOutboxRepository.save(new TransferOutbox(saved.getId()));
+
+        return toResponse(saved);
     }
 
     private TransferResponse toResponse(Transfer transfer) {

@@ -5,10 +5,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(
-        name = "payments.worker.enabled",
-        havingValue = "true"
-)
+@ConditionalOnProperty(name = "payments.worker.enabled", havingValue = "true")
 public class TransferWorker {
 
     private final TransferProcessor transferProcessor;
