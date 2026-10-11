@@ -359,4 +359,38 @@ import java.util.concurrent.TimeUnit;
             );
         }
     }
+
+    @Test
+    void rolledBackProcessingLeavesTransferPendingForRetry() {
+        TransferResponse created = createPendingTransfer();
+
+        TransactionTemplate transaction =
+                new TransactionTemplate(transactionManager);
+
+        assertThrows(IllegalStateException.class, () ->
+                transaction.executeWithoutResult(tx -> {
+                    assertTrue(
+                            transferProcessor.processNextPendingTransfer()
+                    );
+
+                    // Force failure after the processor changes the status.
+                    throw new IllegalStateException("Simulated failure");
+                })
+        );
+
+        var afterFailure = transferRepository
+                .findById(created.transferId())
+                .orElseThrow();
+
+        assertEquals("PENDING", afterFailure.getStatus());
+
+        // A fresh transaction can process the transfer successfully.
+        assertTrue(transferProcessor.processNextPendingTransfer());
+
+        var afterRetry = transferRepository
+                .findById(created.transferId())
+                .orElseThrow();
+
+        assertEquals("COMPLETED", afterRetry.getStatus());
+    }
 }
