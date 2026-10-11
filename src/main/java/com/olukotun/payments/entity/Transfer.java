@@ -63,4 +63,14 @@ public class Transfer {
 
     }
 
+    public void complete() {
+        if (!"PENDING".equals(status)) {
+            throw new IllegalStateException(
+                    "Only pending transfers can be completed"
+            );
+        }
+
+        this.status = "COMPLETED";
+    }
+
 }

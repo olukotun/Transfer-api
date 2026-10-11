@@ -30,10 +30,17 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
+import com.olukotun.payments.service.TransferProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 @Testcontainers
 @SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "payments.worker.enabled=false"
 )public class TransferServiceIntegrationTest {
 
     @MockitoBean
@@ -41,6 +48,7 @@ import static org.mockito.Mockito.when;
 
     @BeforeEach
     void configureTestTokens() {
+        transferRepository.deleteAll();
         when(jwtDecoder.decode("test-write-token"))
                 .thenReturn(testJwt(
                         "test-write-token",
@@ -76,6 +84,12 @@ import static org.mockito.Mockito.when;
 
     @Autowired
     private TransferRepository transferRepository;
+
+    @Autowired
+    private TransferProcessor transferProcessor;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @Test
     void sameKeyAndDetailsReturnSameTransfer() {
@@ -246,5 +260,103 @@ import static org.mockito.Mockito.when;
 
         assertEquals(403, response.statusCode());
         assertEquals(countBefore, transferRepository.count());
+    }
+    private TransferResponse createPendingTransfer() {
+        return transferService.createTransfer(
+                UUID.randomUUID().toString(),
+                new TransferRequest(
+                        "ACC1001",
+                        "ACC2002",
+                        new BigDecimal("200.00"),
+                        "USD"
+                )
+        );
+    }
+
+    @Test
+    void pendingTransferIsCompleted() {
+        TransferResponse created = createPendingTransfer();
+
+        assertEquals("PENDING", created.status());
+
+        assertTrue(transferProcessor.processNextPendingTransfer());
+
+        var stored = transferRepository
+                .findById(created.transferId())
+                .orElseThrow();
+
+        assertEquals("COMPLETED", stored.getStatus());
+    }
+
+    @Test
+    void completedTransferIsNotProcessedAgain() {
+        TransferResponse created = createPendingTransfer();
+
+        assertTrue(transferProcessor.processNextPendingTransfer());
+
+        // No pending work remains.
+        assertFalse(transferProcessor.processNextPendingTransfer());
+
+        var stored = transferRepository
+                .findById(created.transferId())
+                .orElseThrow();
+
+        assertEquals("COMPLETED", stored.getStatus());
+        assertEquals(1L, transferRepository.count());
+    }
+
+    @Test
+    void anotherWorkerSkipsLockedTransfer() throws Exception {
+        TransferResponse created = createPendingTransfer();
+
+        TransactionTemplate transaction =
+                new TransactionTemplate(transactionManager);
+
+        var executor = Executors.newSingleThreadExecutor();
+
+        try {
+            transaction.executeWithoutResult(tx -> {
+                // Hold the pending row's lock in this transaction.
+                var locked = transferRepository
+                        .findNextPendingForUpdate()
+                        .orElseThrow();
+
+                assertEquals(created.transferId(), locked.getId());
+
+                // A different thread uses a separate transaction.
+                var competingWorker = executor.submit(
+                        () -> transferProcessor.processNextPendingTransfer()
+                );
+
+                try {
+                    assertFalse(
+                            competingWorker.get(5, TimeUnit.SECONDS),
+                            "The competing worker must skip the locked transfer"
+                    );
+                } catch (Exception exception) {
+                    throw new AssertionError(
+                            "The competing worker did not finish successfully",
+                            exception
+                    );
+                }
+
+                assertEquals("PENDING", locked.getStatus());
+            });
+
+            // The first transaction has ended and released its lock.
+            assertTrue(transferProcessor.processNextPendingTransfer());
+
+            var stored = transferRepository
+                    .findById(created.transferId())
+                    .orElseThrow();
+
+            assertEquals("COMPLETED", stored.getStatus());
+        } finally {
+            executor.shutdownNow();
+            assertTrue(
+                    executor.awaitTermination(5, TimeUnit.SECONDS),
+                    "Worker thread did not stop"
+            );
+        }
     }
 }
