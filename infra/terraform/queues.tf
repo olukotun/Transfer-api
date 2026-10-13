@@ -26,7 +26,7 @@ resource "aws_sqs_queue" "transfer_requests" {
   })
   receive_wait_time_seconds = 20
   redrive_policy = jsonencode({
-    deadLetterTargetArn = "arn:aws:sqs:us-east-2:611065450457:payments-transfer-dlq"
+    deadLetterTargetArn = aws_sqs_queue.transfer_dlq.arn
     maxReceiveCount     = 5
   })
   region                     = "us-east-2"
