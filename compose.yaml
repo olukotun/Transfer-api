@@ -24,22 +24,26 @@ services:
       DB_USERNAME: payments_user
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD first}
       JWT_JWK_SET_URI: http://keycloak:8080/realms/payments/protocol/openid-connect/certs
+
+      PAYMENTS_WORKER_ENABLED: "false"
+      PAYMENTS_SQS_ENABLED: "true"
+      PAYMENTS_SQS_CONSUMER_ENABLED: "true"
+      PAYMENTS_SQS_QUEUE_URL: https://sqs.us-east-2.amazonaws.com/611065450457/payments-transfer-requests
+
+      AWS_PROFILE: payments-dev
+      AWS_REGION: us-east-2
+      AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
+      AWS_CONFIG_FILE: /aws/config
     ports:
       - "127.0.0.1:8081:8080"
+    volumes:
+      - type: bind
+        source: ${PAYMENTS_AWS_CONFIG_DIR:?Set PAYMENTS_AWS_CONFIG_DIR first}
+        target: /aws
+        read_only: true
     depends_on:
       db:
         condition: service_healthy
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.8.0
-    command: [ "start-dev" ]
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD first}
-      KC_HOSTNAME: http://localhost:8082
-    ports:
-      - "127.0.0.1:8082:8080"
-    volumes:
-      - keycloak-data:/opt/keycloak/data
 
 volumes:
   payments-data:
