@@ -334,4 +334,23 @@ public class TransferServiceIntegrationTest {
             transferRepository.delete(transfer);
         }));
     }
+
+    @Test
+    void duplicateDeliveryDoesNotProcessTransferTwice() {
+        TransferResponse created = createPendingTransfer();
+
+        assertTrue(
+                transferProcessor.processTransfer(created.transferId())
+        );
+
+        assertFalse(
+                transferProcessor.processTransfer(created.transferId())
+        );
+
+        var stored = transferRepository
+                .findById(created.transferId())
+                .orElseThrow();
+
+        assertEquals("COMPLETED", stored.getStatus());
+    }
 }

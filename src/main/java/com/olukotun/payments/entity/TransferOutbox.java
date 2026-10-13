@@ -39,4 +39,11 @@ public class TransferOutbox {
         this.eventType = "TRANSFER_REQUESTED";
         this.createdAt = Instant.now();
     }
+    public void markPublished() {
+        if (publishedAt != null) {
+            throw new IllegalStateException("Event is already published");
+        }
+
+        this.publishedAt = Instant.now();
+    }
 }
