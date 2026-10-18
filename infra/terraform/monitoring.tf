@@ -73,6 +73,6 @@ resource "aws_cloudwatch_metric_alarm" "transfer_dlq_not_empty" {
   tags_all                  = {}
   threshold                 = 1
   threshold_metric_id       = null
-  treat_missing_data        = "missing"
+  treat_missing_data        = "notBreaching"
   unit                      = null
 }
